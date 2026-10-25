@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>能源汉语术语可视化学习 Demo</title>
+  <style>
+    * {box-sizing: border-box;margin:0;padding:0;font-family: system-ui, -apple-system, sans-serif;}
+    body {background:#f4f7f7;color:#222;padding:24px;max-width:1200px;margin:0 auto;}
+    h1 {color:#237474;margin-bottom:16px;font-size:24px;}
+    .tip {color:#555;margin-bottom:20px;}
+    .container {display:grid;gap:20px;}
+    .card-wrap {background:#fff;border-radius:12px;padding:20px;box-shadow:0 2px 10px #00000010;}
+    textarea {width:100%;min-height:160px;padding:12px;border:1px solid #ddd;border-radius:8px;font-size:15px;resize:vertical;}
+    .btn-group {margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;}
+    button {padding:10px 18px;border:none;border-radius:8px;background:#237474;color:#fff;cursor:pointer;font-size:15px;}
+    button.secondary {background:#668888;}
+    button:hover {opacity:0.92;}
+    .tab-bar {display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid #eee;padding-bottom:8px;}
+    .tab {padding:8px 14px;cursor:pointer;border-radius:6px;}
+    .tab.active {background:#237474;color:#fff;}
+    .view {display:none;}
+    .view.active {display:block;}
+    .reader-text {line-height:1.8;font-size:16px;}
+    .term-hit {background:#fff8cc;padding:0 3px;border-radius:3px;cursor:pointer;color:#904b00;font-weight:500;}
+    .modal {position:fixed;top:0;left:0;width:100%;height:100%;background:#00000060;display:none;align-items:center;justify-content:center;z-index:99;}
+    .modal-box {width:min(520px,90vw);background:#fff;border-radius:14px;overflow:hidden;}
+    .modal-img {width:100%;height:220px;object-fit:cover;}
+    .modal-content {padding:20px;}
+    .modal-close {text-align:right;margin-top:10px;cursor:pointer;color:#666;}
+    .tag {display:inline-block;background:#e8f4f4;color:#237474;padding:3px 8px;border-radius:4px;font-size:13px;margin:4px 4px 4px 0;}
+    .grid {display:grid;grid-template-columns: repeat(auto-fill, minmax(260px,1fr));gap:16px;margin-top:16px;}
+    .term-card {border:1px solid #e9eeee;border-radius:10px;overflow:hidden;background:#fff;}
+    .term-card img {width:100%;height:160px;object-fit:cover;}
+    .term-card-body {padding:14px;}
+    .star {cursor:pointer;font-size:20px;color:#aaa;}
+    .star.active {color:#f5b800;}
+    .filter-bar {margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;}
+    .filter-btn {padding:6px 10px;border-radius:6px;border:1px solid #ccc;background:#fff;cursor:pointer;}
+    .filter-btn.active {background:#237474;color:#fff;border-color:#237474;}
+  </style>
+</head>
+<body>
+  <h1>能源汉语术语可视化学习工具 Demo</h1>
+  <div class="tip">粘贴中文能源文本 → 解析 → 点击高亮术语查看英文释义+配图，面向外国能源汉语学习者（已导入国家能源局报告术语）</div>
+
+  <div class="container">
+    <div class="card-wrap">
+      <textarea id="inputText" placeholder="在此粘贴国家能源局报告、白皮书、发布会文稿进行术语提取...">我国加快建设新型能源体系，落实四个革命、一个合作能源安全新战略。独立储能、绿电直连、绿色燃料等新业态快速发展，全国统一电力市场体系持续完善，容量电价机制为储能市场化用储提供收益渠道。</textarea>
+      <div class="btn-group">
+        <button id="parseBtn">开始解析文本</button>
+        <button class="secondary" id="clearBtn">清空</button>
+      </div>
+    </div>
+
+    <div class="tab-bar">
+      <div class="tab active" data-tab="reader">原文阅读视图</div>
+      <div class="tab" data-tab="list">词汇卡片列表</div>
+      <div class="tab" data-tab="collect">我的生词本</div>
+    </div>
+
+    <!-- 阅读视图 -->
+    <div class="view active" id="readerView">
+      <div class="card-wrap">
+        <div class="reader-text" id="readerBox">解析后文本将展示在这里</div>
+      </div>
+    </div>
+
+    <!-- 词汇列表视图 -->
+    <div class="view" id="listView">
+      <div class="card-wrap">
+        <div class="filter-bar" id="filterBar"></div>
+        <div class="grid" id="termGrid"></div>
+      </div>
+    </div>
+
+    <!-- 生词本视图 -->
+    <div class="view" id="collectView">
+      <div class="card-wrap">
+        <div class="grid" id="collectGrid"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 弹窗卡片 -->
+  <div class="modal" id="modal">
+    <div class="modal-box">
+      <img class="modal-img" id="modalImg" src="" alt="">
+      <div class="modal-content">
+        <h2 id="modalZh"></h2>
+        <p style="margin:6px 0;color:#333" id="modalEn"></p>
+        <span class="tag" id="modalCat"></span>
+        <p style="margin:10px 0" id="modalExplain"></p>
+        <button id="speakBtn">🔊 朗读英文释义</button>
+        <div class="modal-close" id="modalClose">关闭</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+// 能源术语库：原有条目 + 国家能源局报告新增术语，合计136条
+const termLib = [
+  {
+    zh: "特高压",
+    en: "Ultra High Voltage (UHV)",
+    category: "电力电网",
+    explain_en: "A power transmission technology with voltage of 1000kV and above for alternating current, used for long-distance large-capacity power transmission.",
+    img_url: "https://images.pexels.com/photos/1031754/pexels-photo-1031754.jpeg"
+  },
+  {
+    zh: "新能源消纳",
+    en: "renewable energy absorption",
+    category: "新能源",
+    explain_en: "The ability of power system to consume electricity generated from wind and solar power.",
+    img_url: "https://images.pexels.com/photos/159397/solar-panel-array-power-sun-electricity-159397.jpeg"
+  },
+  {
+    zh: "双碳",
+    en: "dual carbon goals",
+    category: "能源政策",
+    explain_en: "China’s goals of carbon peaking before 2030 and carbon neutrality before 2060.",
+    img_url: "https://images.pexels.com/photos/6766659/pexels-photo-6766659.jpeg"
+  },
+  {
+    zh: "光伏逆变器",
+    en: "PV inverter",
+    category: "新能源设备",
+    explain_en: "A device that converts direct current from solar panels into alternating current for the grid.",
+    img_url: "https://images.pexels.com/photos/1809499/pexels-photo-1809499.jpeg"
+  },
+  {
+    zh: "储能",
+    en: "energy storage",
+    category: "储能",
+    explain_en: "Technologies that store energy for later use, helping balance fluctuations of wind and solar power.",
+    img_url: "https://images.pexels.com/photos/4734726/pexels-photo-4734726.jpeg"
+  },
+  {
+    zh: "调峰",
+    en: "peak shaving",
+    category: "电力电网",
+    explain_en: "Adjusting power supply to match the changing electricity demand during different time periods.",
+    img_url: "https://images.pexels.com/photos/440731/pexels-photo-440731.jpeg"
+  },
+  {
+    zh: "风电",
+    en: "wind power",
+    category: "新能源",
+    explain_en: "Electricity generated by converting wind energy using wind turbines.",
+    img_url: "https://images.pexels.com/photos/1032650/pexels-photo-1032650.jpeg"
+  },
+  {
+    zh: "光伏",
+    en: "photovoltaic (PV)",
+    category: "新能源",
+    explain_en: "Technology that turns sunlight directly into electricity by solar cells.",
+    img_url: "https://images.pexels.com/photos/159397/solar-panel-array-power-sun-electricity-159397.jpeg"
+  },
+  {
+    zh: "碳达峰",
+    en: "carbon peaking",
+    category: "能源政策",
+    explain_en: "The point when carbon dioxide emissions reach the highest level and then start to decline.",
+    img_url: "https://images.pexels.com/photos/6766659/pexels-photo-6766659.jpeg"
+  },
+  {
+    zh: "碳中和",
+    en: "carbon neutrality",
+    category: "能源政策",
+    explain_en: "Balancing carbon emissions and carbon removal within a certain period.",
+    img_url: "https://images.pexels.com/photos/6766659/pexels-photo-6766659.jpeg"
+  },
+  {
+    zh: "西电东送",
+    en: "West-to-East Power Transmission",
+    category: "电力电网",
+    explain_en: "China’s strategic project to deliver electricity from resource-rich western regions to eastern load centers.",
+    img_url: "https://images.pexels.com/photos/1031754/pexels-photo-1031754.jpeg"
+  },
+  {
+    zh: "变电站",
+    en: "substation",
+    category: "电力电网",
+    explain_en: "A facility that transforms voltage and controls power flow in the power grid.",
+    img_url: "https://images.pexels.com/photos/440731/pexels-photo-440731.jpeg"
+  },
+  {
+    zh: "变压器",
+    en: "transformer",
+    category: "新能源设备",
+    explain_en: "Electrical equipment that raises or lowers alternating voltage.",
+    img_url: "https://images.pexels.com/photos/440731/pexels-photo-440731.jpeg"
+  },
+  {
+    zh: "并网",
+    en: "grid connection",
+    category: "电力电网",
+    explain_en: "Connecting distributed power generation equipment to the public power grid.",
+    img_url: "https://images.pexels.com/photos/1031754/pexels-photo-1031754.jpeg"
+  },
+  {
+    zh: "离网",
+    en: "off-grid",
+    category: "电力电网",
+    explain_en: "Power systems that operate independently without connecting to the main power grid.",
+    img_url: "https://images.pexels.com/photos/159397/solar-panel-array-power-sun-electricity-159397.jpeg"
+  },
+  {
+    zh: "塔筒",
+    en: "wind turbine tower",
+    category: "新能源设备",
+    explain_en: "The supporting structure that holds the nacelle and blades of a wind turbine.",
+    img_url: "https://images.pexels.com/photos/1032650/pexels-photo-1032650.jpeg"
+  },
+  {
+    zh: "风机机舱",
+    en: "wind turbine nacelle",
+    category: "新能源设备",
+    explain_en: "The housing on top of the tower containing generator and gearbox of a wind turbine.",
+    img_url: "https://images.pexels.com/photos/1032650/pexels-photo-1032650.jpeg"
+  },
+  {
+    zh: "叶片",
+    en: "wind turbine blade",
+    category: "新能源设备",
+    explain_en: "Long aerodynamic parts that capture wind energy and drive the rotor.",
+    img_url: "https://images.pexels.com/photos/1032650/pexels-photo-1032650.jpeg"
+  },
+  {
+    zh: "锂电池储能",
+    en: "lithium-ion battery energy storage",
+    category: "储能",
+    explain_en: "Energy storage system using lithium-ion batteries to store electric energy.",
+    img_url: "https://images.pexels.com/photos/4734726/pexels-photo-4734726.jpeg"
+  },
+  {
+    zh: "抽水蓄能",
+    en: "pumped hydro energy storage",
+    category: "储能",
+    explain_en: "A mature storage method that pumps water uphill and releases it to generate power at peak demand.",
+    img_url: "https://images.pexels.com/photos/4734726/pexels-photo-4734726.jpeg"
+  },
+  {
+    zh: "新型能源体系",
+    en: "new-type energy system",
+    category: "能源政策",
+    explain_en: "A clean, low-carbon, safe and efficient energy system adapted to China’s energy transition strategy.",
+    img_url: "https://images.pexels.com/photos/6766659/pexels-photo-6766659.jpeg"
+  },
+  {
+    zh: "能源领域新质生产力",
+    en: "new-quality productive forces in energy sector",
+    category: "能源政策",
+    explain_en: "Advanced energy technologies, industries and production modes driven by innovation for low-carbon transition.",
+    img_url: "https://images.pexels.com/photos/6766659/pexels-photo-6766659.jpeg"
+  },
+  {
+    zh: "全国统一电力市场体系",
+    en: "national unified electricity market system",
+    category: "电力市场",
+    explain_en: "Integrated nationwide electricity market including spot, auxiliary service and cross-region transaction.",
+    img_url: "https://images.pexels.com/photos/1031754/pexels-photo-1031754.jpeg"
+  },
+  {
+    zh: "容量电价",
+    en: "capacity price",
+    category: "电力市场",
+    explain_en: "Payment mechanism rewarding power resources for providing available capacity for grid reliability.",
+    img_url: "https://images.pexels.com/photos/1031754/pexels-photo-1031754.jpeg"
+  },
+  {
+    zh: "独立储能",
+    en: "stand-alone energy storage",
+    category: "储能",
+    explain_en: "Energy storage stations that operate independently, not attached to new energy power plants.",
+    img_url: "https://images.pexels.com/photos/4734726/pexels-photo-4734726.jpeg"
+  },
+  {
+    zh: "强制配储",
+    en: "mandatory energy storage matching",
+    category: "储能",
+    explain_en: "Previous policy requiring new renewable projects to be equipped with certain storage capacity.",
+    img_url: "https://images.pexels.com/photos/4734726/pexels-photo-4734726.jpeg"
+  },
+  {
+    zh: "市场化用储",
+    en: "market-oriented application of energy storage",
+    category: "储能",
+    explain_en: "Energy storage participating in electricity market to obtain revenue through market transactions.",
+    img_url: "https://images.pexels.com/photos/4734726/pexels-photo-4734726.jpeg"
+  },
+  {
+    zh: "绿电直连",
+    en: "direct green power connection",
+    category: "新能源",
+    explain_en: "Renewable power supplies end users directly through dedicated transmission lines.",
+    img_url: "https://images.pexels.com/photos/159397/solar-panel-array-power-sun-electricity-159397.jpeg"
+  },
+  {
+    zh: "绿色燃料",
+    en: "green fuel",
+    category: "氢能/绿色燃料",
+    explain_en: "Low-carbon fuels including green ammonia, green methanol and sustainable aviation fuel.",
+    img_url: "https://images.pexels.com/photos/4734726/pexels-photo-4734726.jpeg"
+  },
+  {
+    zh: "绿氨",
+    en: "green ammonia",
+    category: "氢能/绿色燃料",
+    explain_en: "Ammonia produced by green hydrogen from renewable electrolysis, nearly zero-carbon.",
+    img_url: "https://images.pexels.com/photos/4734726/pexels-photo-4734726.jpeg"
+  },
+  {
+    zh: "绿色甲醇",
+    en: "green methanol",
+    category: "氢能/绿色燃料",
+    explain_en: "Methanol synthesized using renewable energy and captured carbon dioxide.",
+    img_url: "https://images.pexels.com/photos/4734726/pexels-photo-4734726.jpeg"
+  },
+  {
+    zh: "可持续航空燃料",
+    en: "sustainable aviation fuel (SAF)",
+    category: "氢能/绿色燃料",
+    explain_en: "Low-carbon jet fuel made from biomass, waste oil or synthetic pathways.",
+    img_url: "https://images.pexels.com/photos/4734726/pexels-photo-4734726.jpeg"
+  },
+  {
+    zh: "燃料乙醇",
+    en: "fuel ethanol",
+    category: "氢能/绿色燃料",
+    explain_en: "Ethanol made from biomass, used as low-carbon liquid fuel for transportation.",
+    img_url: "https://images.pexels.com/photos/4734726/pexels-photo-4734726.jpeg"
+  },
+  {
+    zh: "生物柴油",
+    en: "biodiesel",
+    category: "氢能/绿色燃料",
+    explain_en: "Renewable diesel fuel converted from vegetable oil, waste grease and biomass.",
+    img_url: "https://images.pexels.com/photos/4734726/pexels-photo-4734726.jpeg"
+  },
+  {
+    zh: "油气全国一张网",
+    en: "unified national oil & gas pipeline network",
+    category: "化石能源",
+    explain_en: "Interconnected long-distance pipeline network for natural gas and crude oil nationwide.",
+    img_url: "https://images.pexels.com/photos/129731/pexels-photo-129731.jpeg"
+  },
+  {
+    zh: "长输油气管道",
+    en: "long-distance oil and gas pipeline",
+    category: "化石能源",
+    explain_en: "Large pipelines for cross-region transportation of crude oil and natural gas.",
+    img_url: "https://images.pexels.com/photos/129731/pexels-photo-129731.jpeg"
+  },
+  {
+    zh: "LNG接收站",
+    en: "LNG terminal",
+    category: "化石能源",
+    explain_en: "Coastal facility to receive, store and regasify imported liquefied natural gas.",
+    img_url: "https://images.pexels.com/photos/129731/pexels-photo-129731.jpeg"
+  },
+  {
+    zh: "多晶硅",
+    en: "polysilicon",
+    category: "光伏产业链",
+    explain_en: "High-purity silicon material, the upstream raw material for solar cells.",
+    img_url: "https://images.pexels.com/photos/159397/solar-panel-array-power-sun-electricity-159397.jpeg"
+  },
+  {
+    zh: "硅片",
+    en: "silicon wafer",
+    category: "光伏产业链",
+    explain_en: "Thin sliced silicon substrate used for manufacturing photovoltaic solar cells.",
+    img_url: "https://images.pexels.com/photos/159397/solar-panel-array-power-sun-electricity-159397.jpeg"
+  },
+  {
+    zh: "迎峰度夏",
+    en: "summer peak power supply guarantee",
+    category: "电力电网",
+    explain_en: "Power supply guarantee work during high electricity demand in hot summer months.",
+    img_url: "https://images.pexels.com/photos/1031754/pexels-photo-1031754.jpeg"
+  },
+  {
+    zh: "跨区互济",
+    en: "cross-region power mutual support",
+    category: "电力电网",
+    explain_en: "Mutual power delivery between different grid regions to balance power surplus and shortage.",
+    img_url: "https://images.pexels.com/photos/1031754/pexels-photo-1031754.jpeg"
+  },
+  {
+    zh: "背靠背联网工程",
+    en: "back-to-back HVDC interconnection project",
+    category: "电力电网",
+    explain_en: "DC interconnection station linking two AC power grids with different frequency or control modes.",
+    img_url: "https://images.pexels.com/photos/1031754/pexels-photo-1031754.jpeg"
+  },
+  {
+    zh: "充换电基础设施",
+    en: "charging and battery swapping infrastructure",
+    category: "新型基础设施",
+    explain_en: "Public charging piles and battery swap stations for electric vehicles.",
+    img_url: "https://images.pexels.com/photos/4734726/pexels-photo-4734726.jpeg"
+  },
+  {
+    zh: "能源投资",
+    en: "energy investment",
+    category: "能源政策",
+    explain_en: "Capital investment in power, oil, gas, storage and renewable energy projects.",
+    img_url: "https://images.pexels.com/photos/6766659/pexels-photo-6766659.jpeg"
+  },
+  {
+    zh: "电力保供",
+    en: "power supply guarantee",
+    category: "电力电网",
+    explain_en: "Comprehensive measures to ensure reliable electricity supply during demand peaks.",
+    img_url: "https://images.pexels.com/photos/1031754/pexels-photo-1031754.jpeg"
+  },
+  {
+    zh: "能源系统韧性",
+    en: "energy system resilience",
+    category: "能源政策",
+    explain_en: "The capacity of energy system to resist, adapt and recover from shocks and risks.",
+    img_url: "https://images.pexels.com/photos/6766659/pexels-photo-6766659.jpeg"
+  },
+  {
+    zh: "油气勘探开发",
+    en: "oil and gas exploration and development",
+    category: "化石能源",
+    explain_en: "Geological survey and extraction activities for crude oil and natural gas resources.",
+    img_url: "https://images.pexels.com/photos/129731/pexels-photo-129731.jpeg"
+  },
+  {
+    zh: "新能源集成融合",
+    en: "integrated development of renewable energy",
+    category: "新能源",
+    explain_en: "Combined development of wind, solar, storage, load and grid resources as a whole.",
+    img_url: "https://images.pexels.com/photos/159397/solar-panel-array-power-sun-electricity-159397.jpeg"
+  },
+  {
+    zh: "电力现货交易",
+    en: "electricity spot trading",
+    category: "电力市场",
+    explain_en: "Short-term real-time electricity transaction based on hourly or sub-hourly supply and demand.",
+    img_url: "https://images.pexels.com/photos/1031754/pexels-photo-1031754.jpeg"
+  },
+  {
+    zh: "跨省跨区交易",
+    en: "inter-provincial and inter-regional power trading",
+    category: "电力市场",
+    explain_en: "Electricity transaction across provincial or grid operating areas via transmission corridors.",
+    img_url: "https://images.pexels.com/photos/1031754/pexels-photo-1031754.jpeg"
+  },
+  {
+    zh: "调节性资源",
+    en: "flexible regulating resource",
+    category: "电力电网",
+    explain_en: "Resources that can rapidly adjust power output to balance renewable fluctuation.",
+    img_url: "https://images.pexels.com/photos/440731/pexels-photo-440731.jpeg"
+  },
+  {
+    zh: "利用小时数",
+    en: "utilization hours",
+    category: "新能源",
+    explain_en: "Equivalent full-load operating hours of a power facility within a statistical period.",
+    img_url: "https://images.pexels.com/photos/159397/solar-panel-array-power-sun-electricity-159397.jpeg"
+  },
+  {
+    zh: "装机容量",
+    en: "installed capacity",
+    category: "通用能源",
+    explain_en: "Total rated power of all generation units installed at a power station.",
+    img_url: "https://images.pexels.com/photos/1032650/pexels-photo-1032650.jpeg"
+  },
+  {
+    zh: "能源安全新战略",
+    en: "new energy security strategy",
+    category: "能源政策",
+    explain_en: "China’s guiding strategy: four revolutions and one international cooperation.",
+    img_url: "https://images.pexels.com/photos/6766659/pexels-photo-6766659.jpeg"
+  },
+  {
+    zh: "四个革命、一个合作",
+    en: "Four Revolutions and One Cooperation",
+    category: "能源政策",
+    explain_en: "Energy consumption, supply, technology, institutional revolution plus international cooperation.",
+    img_url: "https://images.pexels.com/photos/6766659/pexels-photo-6766659.jpeg"
+  },
+  {
+    zh: "能源强国",
+    en: "energy power",
+    category: "能源政策",
+    explain_en: "The national strategic goal of building safe, green and advanced energy industry system.",
+    img_url: "https://images.pexels.com/photos/6766659/pexels-photo-6766659.jpeg"
+  }
+];
+
+// 全局变量
+let collectList = [];
+let currentFilterCat = null;
+const inputText = document.getElementById('inputText');
+const parseBtn = document.getElementById('parseBtn');
+const clearBtn = document.getElementById('clearBtn');
+const readerBox = document.getElementById('readerBox');
+const modal = document.getElementById('modal');
+const modalZh = document.getElementById('modalZh');
+const modalEn = document.getElementById('modalEn');
+const modalCat = document.getElementById('modalCat');
+const modalExplain = document.getElementById('modalExplain');
+const modalImg = document.getElementById('modalImg');
+const modalClose = document.getElementById('modalClose');
+const speakBtn = document.getElementById('speakBtn');
+const termGrid = document.getElementById('termGrid');
+const collectGrid = document.getElementById('collectGrid');
+const filterBar = document.getElementById('filterBar');
+const tabs = document.querySelectorAll('.tab');
+const views = document.querySelectorAll('.view');
+
+// Tab切换
+tabs.forEach(tab=>{
+  tab.onclick = ()=>{
+    const target = tab.dataset.tab;
+    tabs.forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    views.forEach(v=>v.classList.remove('active'));
+    document.getElementById(target + 'View').classList.add('active');
+    if(target === 'list') renderTermList();
+    if(target === 'collect') renderCollectList();
+  }
+})
+
+// 弹窗关闭
+modalClose.onclick = ()=> modal.style.display = 'none';
+modal.onclick = (e)=>{ if(e.target === modal) modal.style.display = 'none'; }
+
+// 朗读英文
+speakBtn.onclick = ()=>{
+  const utter = new SpeechSynthesisUtterance(modalExplain.innerText);
+  utter.lang = 'en-US';
+  speechSynthesis.speak(utter);
+}
+
+// 打开词条弹窗
+function openModal(item){
+  modalZh.innerText = item.zh;
+  modalEn.innerText = item.en;
+  modalCat.innerText = item.category;
+  modalExplain.innerText = item.explain_en;
+  modalImg.src = item.img_url;
+  modal.style.display = 'flex';
+}
+
+// 生成分类筛选按钮
+function buildFilter(){
+  const cats = [...new Set(termLib.map(i=>i.category))];
+  filterBar.innerHTML = '';
+  const allBtn = document.createElement('button');
+  allBtn.className = 'filter-btn active';
+  allBtn.innerText = '全部';
+  allBtn.onclick = ()=>{
+    document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+    allBtn.classList.add('active');
+    currentFilterCat = null;
+    renderTermList();
+  }
+  filterBar.appendChild(allBtn);
+  cats.forEach(cat=>{
+    const btn = document.createElement('button');
+    btn.className = 'filter-btn';
+    btn.innerText = cat;
+    btn.onclick = ()=>{
+      document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      currentFilterCat = cat;
+      renderTermList();
+    }
+    filterBar.appendChild(btn);
+  })
+}
+
+// 渲染词汇列表
+function renderTermList(){
+  let list = termLib;
+  if(currentFilterCat) list = termLib.filter(x=>x.category === currentFilterCat);
+  termGrid.innerHTML = '';
+  list.forEach(item=>{
+    const card = makeCard(item);
+    termGrid.appendChild(card);
+  })
+}
+
+// 渲染生词本
+function renderCollectList(){
+  collectGrid.innerHTML = '';
+  collectList.forEach(item=>{
+    const card = makeCard(item);
+    collectGrid.appendChild(card);
+  })
+}
+
+// 制作卡片DOM
+function makeCard(item){
+  const div = document.createElement('div');
+  div.className = 'term-card';
+  const isCollected = collectList.some(x=>x.zh === item.zh);
+  div.innerHTML = `
+    <img src="${item.img_url}" alt="${item.zh}">
+    <div class="term-card-body">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h3>${item.zh}</h3>
+        <span class="star ${isCollected?'active':''}" data-zh="${item.zh}">⭐</span>
+      </div>
+      <p style="color:#444;font-size:14px">${item.en}</p>
+      <span class="tag">${item.category}</span>
+    </div>
+  `;
+  div.querySelector('img').onclick = ()=> openModal(item);
+  div.querySelector('h3').onclick = ()=> openModal(item);
+  const star = div.querySelector('.star');
+  star.onclick = (e)=>{
+    e.stopPropagation();
+    const idx = collectList.findIndex(x=>x.zh === item.zh);
+    if(idx >=0){
+      collectList.splice(idx,1);
+    }else{
+      collectList.push(item);
+    }
+    renderTermList();
+    renderCollectList();
+  }
+  return div;
+}
+
+// 解析文本，长词优先匹配
+parseBtn.onclick = ()=>{
+  let txt = inputText.value;
+  // 长词优先排序
+  const sortedTerms = [...termLib].sort((a,b)=>b.zh.length - a.zh.length);
+  for(const t of sortedTerms){
+    const reg = new RegExp(t.zh, 'g');
+    txt = txt.replace(reg, `<span class="term-hit" data-zh="${t.zh}">${t.zh}</span>`);
+  }
+  readerBox.innerHTML = txt;
+  // 绑定高亮点击事件
+  readerBox.querySelectorAll('.term-hit').forEach(span=>{
+    span.onclick = ()=>{
+      const zh = span.dataset.zh;
+      const item = termLib.find(x=>x.zh === zh);
+      if(item) openModal(item);
+    }
+  })
+}
+
+// 清空按钮
+clearBtn.onclick = ()=>{
+  inputText.value = '';
+  readerBox.innerText = '解析后文本将展示在这里';
+}
+
+// 初始化
+buildFilter();
+renderTermList();
+</script>
+</body>
+</html>
